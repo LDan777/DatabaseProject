@@ -558,8 +558,8 @@ const handleServiceClick = () => {
           <h4 class="section-label">快捷服务</h4>
           <div class="service-grid">
             <div class="service-item" @click="handleServiceClick"><i class="fas fa-utensils color-orange"></i><span>航空订餐</span></div>
-            <div class="service-item" @click="handleServiceClick"><i class="fas fa-chair color-blue"></i><span>选座值机</span></div>
-            <div class="service-item" @click="handleServiceClick"><i class="fas fa-car color-pink"></i><span>租车·约车</span></div>
+            <div class="service-item" @click="handleServiceClick"><i class="fas fa-chair color-blue"></i><span>预定接机</span></div>
+            <div class="service-item" @click="handleServiceClick"><i class="fas fa-car color-pink"></i><span>租车约车</span></div>
             <div class="service-item" @click="handleServiceClick"><i class="fas fa-shield-halved color-green"></i><span>行程保险</span></div>
             <div class="service-item" @click="handleServiceClick"><i class="fas fa-book color-yellow"></i><span>乘机指南</span></div>
           </div>

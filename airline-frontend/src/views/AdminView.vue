@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
 import axios from 'axios'
 
 const API_BASE = 'http://127.0.0.1:5000/api'
@@ -59,17 +60,28 @@ const stopAutoRefresh = () => {
 }
 
 // 页面加载时优先恢复登录态，再拉取数据，启动定时刷新
+const router = useRouter()
+
+function goToUserHome() {
+  router.push('/')
+}
+
 onMounted(async () => {
-  if (localStorage.getItem('adminIsLoggedIn') === 'true') {
+  const loggedInFlag = localStorage.getItem('adminIsLoggedIn')
+  if (loggedInFlag === 'true') {
     isLoggedIn.value = true
+    await loadCities()
+    await loadAirports()
+    await loadFlights()
+    await loadFlightInstances()
+    await loadUsers()
+    await loadOrders()
+    startAutoRefresh()
+  } else {
+    isLoggedIn.value = false
+    localStorage.removeItem('adminIsLoggedIn')
+    localStorage.removeItem('adminAccessGranted')
   }
-  await loadCities()
-  await loadAirports()
-  await loadFlights()
-  await loadFlightInstances()
-  await loadUsers()
-  await loadOrders()
-  startAutoRefresh()
 })
 
 onBeforeUnmount(() => {
@@ -1088,7 +1100,7 @@ const pendingTasks = computed(() => ([
   { id: 'T03', title: '今日新增资讯草稿', value: systemNews.value.filter(n => n.status === '草稿').length, level: 'info' }
 ]))
 
-const recentOrders = computed(() => orders.value.slice(0, 5))
+const recentOrders = computed(() => orders.value.slice(0, 4))
 
 // 面包屑
 const breadcrumb = computed(() => {
@@ -1124,9 +1136,12 @@ const breadcrumb = computed(() => {
         <input v-model="adminUser.password" type="password" placeholder="授权口令 " @keyup.enter="handleAdminLogin">
       </div>
       
-      <button class="btn-glass" @click="handleAdminLogin">登录系统</button>
+        <button class="btn-glass" @click="handleAdminLogin">登录系统</button>
+        <div style="margin-top: 16px; text-align: center;">
+          <button class="back-to-user-from-login-btn" @click="goToUserHome">返回用户界面</button>
+        </div>
+      </div>
     </div>
-  </div>
 
   <div v-else class="app-wrapper">
     <aside class="sidebar-container" :class="{ 'collapsed': isCollapse }">
@@ -1166,6 +1181,13 @@ const breadcrumb = computed(() => {
           <i class="fas fa-file-invoice"></i><span v-show="!isCollapse">订单流水</span>
         </div>
       </div>
+
+      <div class="sidebar-footer">
+        <button class="logout-btn" @click="handleLogout">
+          <span>🚪</span>
+          <span v-show="!isCollapse">退出登录</span>
+        </button>
+      </div>
     </aside>
 
     <div class="main-container">
@@ -1177,6 +1199,7 @@ const breadcrumb = computed(() => {
           <div class="breadcrumb">{{ breadcrumb }}</div>
         </div>
         <div class="nav-right">
+          <button class="back-to-user-btn" @click="goToUserHome" style="margin-right: 16px; background: none; border: 1px solid #d8e4f7; color: #1e3a8a; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s;">返回用户界面</button>
           <div class="user-dropdown">
             <span class="name">Admin</span>
             <div class="dropdown-menu">
@@ -1187,50 +1210,79 @@ const breadcrumb = computed(() => {
       </header>
 
       <main class="app-main custom-scrollbar">
+        
+
         <div v-if="activeMenu === 'dashboard'" class="dashboard-container fade-in">
-          <div class="panel-group">
-            <div class="panel-col">
+          <div class="el-row top-row">
+            
+            <div class="el-col-1">
+              <div class="el-card fill-height">
+                <div class="el-card-header"><span><i class="fas fa-bolt"></i> 快捷入口</span></div>
+                <div class="quick-link-column">
+                  <button class="quick-link-btn" @click="activeMenu = 'users'"><i class="fas fa-user-gear"></i> 用户管理</button>
+                  <button class="quick-link-btn" @click="activeMenu = 'routes'"><i class="fas fa-route"></i> 航线管理</button>
+                  <button class="quick-link-btn" @click="activeMenu = 'flights'"><i class="fas fa-plane"></i> 航班管理</button>
+                  <button class="quick-link-btn" @click="activeMenu = 'orders'"><i class="fas fa-receipt"></i> 订单处理</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="el-col-4"> <div class="el-card fill-height">
+                <div class="el-card-header"><span><i class="fas fa-clock-rotate-left"></i> 最新订单</span></div>
+                <div class="recent-order-list">
+                  <div class="recent-order-item" v-for="order in recentOrders" :key="order.ticket_id">
+                    <div>
+                      <div class="recent-order-name">{{ order.name }} · {{ order.flightNo }}</div>
+                      <div class="recent-order-sub">#{{ order.ticket_id }} / {{ order.date }}</div>
+                    </div>
+                    <span class="el-tag" :class="order.status==='已支付' ? 'info' : order.status==='已改签' ? 'warning' : order.status==='已退票' ? 'danger' : ''">{{ order.status }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="el-col-3 stats-vertical-col">
+              
               <div class="card-panel clickable-card" @click="navigateFromDashboard('paxDetail')">
                 <div class="card-icon c-blue"><i class="fas fa-users"></i></div>
                 <div class="card-desc">
                   <div class="card-title">今日旅客</div>
                   <div class="card-num">{{ stats.paxToday }}</div>
-                  <div class="card-trend text-success"><i class="fas fa-caret-up"></i> +12% 同比昨日 · 点击查看明细</div>
+                  <div class="card-trend text-success"><i class="fas fa-caret-up"></i> +12%</div>
                 </div>
               </div>
-            </div>
-            <div class="panel-col">
+              
               <div class="card-panel">
                 <div class="card-icon c-green"><i class="fas fa-sack-dollar"></i></div>
                 <div class="card-desc">
                   <div class="card-title">票务总收入</div>
-                  <div class="card-num">{{ stats.revenue }}</div>
-                  <div class="card-trend text-success"><i class="fas fa-caret-up"></i> +5.2% 同比上周</div>
+                  <div class="card-num" style="font-size: 16px;">{{ stats.revenue }}</div> <div class="card-trend text-success"><i class="fas fa-caret-up"></i> +5.2%</div>
                 </div>
               </div>
-            </div>
-            <div class="panel-col">
+              
               <div class="card-panel clickable-card" @click="navigateFromDashboard('manualQueue')">
                 <div class="card-icon c-orange"><i class="fas fa-file-invoice"></i></div>
                 <div class="card-desc">
                   <div class="card-title">异常退票</div>
                   <div class="card-num">{{ stats.pendingRefund }}</div>
-                  <div class="card-trend text-danger"><i class="fas fa-caret-down"></i> 需人工复核 · 点击进入</div>
+                  <div class="card-trend text-danger">需复核</div>
                 </div>
               </div>
-            </div>
-            <div class="panel-col">
+              
               <div class="card-panel">
                 <div class="card-icon c-red"><i class="fas fa-server"></i></div>
                 <div class="card-desc">
                   <div class="card-title">DB健康度</div>
                   <div class="card-num">{{ stats.systemHealth }}</div>
-                  <div class="card-trend text-info"><i class="fas fa-minus"></i> 运行平稳</div>
+                  <div class="card-trend text-info">平稳</div>
                 </div>
               </div>
-            </div>
-          </div>
 
+            </div> 
+          </div> 
+        </div>
+        
+        <div>
           <div class="el-row">
             <div class="el-col-6">
               <div class="el-card">
@@ -1260,61 +1312,9 @@ const breadcrumb = computed(() => {
             </div>
           </div>
 
-          <div class="el-row">
-            <div class="el-col-4">
-              <div class="el-card">
-                <div class="el-card-header"><span><i class="fas fa-bolt"></i> 快捷入口</span></div>
-                <div class="quick-link-grid">
-                  <button class="quick-link-btn" @click="activeMenu = 'flights'"><i class="fas fa-plane"></i> 航班维护</button>
-                  <button class="quick-link-btn" @click="activeMenu = 'orders'"><i class="fas fa-receipt"></i> 订单处理</button>
-                  <button class="quick-link-btn" @click="activeMenu = 'users'"><i class="fas fa-user-gear"></i> 用户维护</button>
-                  <button class="quick-link-btn" @click="activeMenu = 'routes'"><i class="fas fa-route"></i> 班次查询</button>
-                </div>
-              </div>
-            </div>
-            <div class="el-col-6">
-              <div class="el-card">
-                <div class="el-card-header"><span><i class="fas fa-chart-column"></i> 热门航线</span></div>
-                <div class="rank-list">
-                  <div class="rank-item" v-for="(row, idx) in topRoutes" :key="row.route">
-                    <div class="rank-main">
-                      <span class="rank-index">{{ idx + 1 }}</span>
-                      <span class="rank-route">{{ row.route }}</span>
-                    </div>
-                    <span class="rank-count">{{ row.count }} 单</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          
 
-          <div class="el-row">
-            <div class="el-col-4">
-              <div class="el-card">
-                <div class="el-card-header"><span><i class="fas fa-triangle-exclamation"></i> 待办提醒</span></div>
-                <div class="todo-list">
-                  <div class="todo-item" v-for="task in pendingTasks" :key="task.id">
-                    <span class="todo-title">{{ task.title }}</span>
-                    <span class="el-tag task-clickable" :class="task.level" @click="task.action ? navigateFromDashboard(task.action) : null">{{ task.value }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="el-col-6">
-              <div class="el-card">
-                <div class="el-card-header"><span><i class="fas fa-clock-rotate-left"></i> 最新订单</span></div>
-                <div class="recent-order-list">
-              <div class="recent-order-item" v-for="order in recentOrders" :key="order.ticket_id">
-                <div>
-                  <div class="recent-order-name">{{ order.name }} · {{ order.flightNo }}</div>
-                  <div class="recent-order-sub">#{{ order.ticket_id }} / {{ order.date }}</div>
-                </div>
-                <span class="el-tag" :class="order.status==='已支付' ? 'info' : order.status==='已改签' ? 'warning' : order.status==='已退票' ? 'danger' : ''">{{ order.status }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          
         </div>
 
         <div v-if="activeMenu === 'paxDetail'" class="standard-view fade-in">
@@ -2003,6 +2003,14 @@ const breadcrumb = computed(() => {
 .btn-glass { width: 100%; padding: 15px; font-size: 16px; font-weight: 600; cursor: pointer; color: #fff; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 12px; backdrop-filter: blur(10px); transition: 0.3s; }
 .btn-glass:hover { background: rgba(255, 255, 255, 0.2); transform: translateY(-2px); }
 
+.back-to-user-from-login-btn { background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.2); color: #94a3b8; padding: 8px 20px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.3s; }
+.back-to-user-from-login-btn:hover { background: rgba(255, 255, 255, 0.15); color: #fff; border-color: rgba(255, 255, 255, 0.35); }
+
+/* Sidebar Footer */
+.sidebar-footer { border-top: 1px solid #e6eef8; padding: 10px 0; margin-top: auto; background: #fff; }
+.sidebar-footer button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 20px; border: none; background: transparent; color: #4b5563; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.sidebar-footer button:hover { background: #fef0f0; color: #f56c6c; }
+
 /* ================= 布局框架 ================= */
 .app-wrapper { display: flex; height: 100vh; background: var(--el-bg-color-page); font-family: 'Helvetica Neue', Helvetica, sans-serif; }
 .sidebar-container { width: var(--sidebar-width); background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%); display: flex; flex-direction: column; transition: width 0.3s; box-shadow: 2px 0 10px rgba(0,21,41,.08); z-index: 1001; border-right: 1px solid #dbe7f5; }
@@ -2175,6 +2183,52 @@ const breadcrumb = computed(() => {
 .el-message__content { font-size: 14px; line-height: 1; margin: 0; }
 .el-message-fade-enter-active, .el-message-fade-leave-active { transition: opacity .3s, transform .3s; }
 .el-message-fade-enter-from, .el-message-fade-leave-to { opacity: 0; transform: translate(-50%, -100%); }
+
+/* 新增这个样式，让按钮垂直单列排布 */
+.quick-link-column {
+  padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column; /* 核心：让子元素垂直向下排成一列 */
+  gap: 10px;             /* 按钮之间的间距 */
+}
+
+/* 确保按钮宽度能够撑满整列 */
+.quick-link-column .quick-link-btn {
+  width: 100%;
+}
+
+/* 确保最上方一行的三列 Flex 布局等高 */
+.top-row {
+  display: flex;
+  align-items: stretch; /* 核心：让快捷入口、最新订单、数据指标三列等高 */
+  gap: 20px;
+  margin-bottom: 20px;  /* 与下方其他行板块拉开间距 */
+}
+
+/* 确保卡片完全填满列高度 */
+.fill-height {
+  height: 100%;
+}
+
+/* 控制最右侧四个小卡片板块的垂直排列布局 */
+.stats-vertical-col {
+  display: flex;
+  flex-direction: column;   /* 核心：变更为垂直列排布 */
+  justify-content: space-between; /* 让四个卡片在总高度内均匀留白分布 */
+  gap: 10px;                /* 设置卡片之间的垂直缝隙 */
+}
+
+/* 稍微微调一下右侧小卡片的高度和内部间距，让其在紧凑排列下更精致 */
+.stats-vertical-col .card-panel {
+  flex: 1;                 /* 均匀分配高度 */
+  height: auto;            /* 让高度自适应 Flex 约束 */
+  padding: 10px 15px;       /* 适当缩减内边距 */
+}
+
+.stats-vertical-col .card-icon {
+  font-size: 32px;         /* 适当缩小图标尺寸 */
+  padding: 8px;
+}
 
 /* ================= 响应式媒体查询 ================= */
 @media (max-width: 1200px) {
