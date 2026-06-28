@@ -1,0 +1,26 @@
+
+# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+#
+# On branch main
+# Your branch is up to date with 'origin/main'.
+#
+# Changes to be committed:
+#	modified:   API_CONTRACT.md
+#	new file:   CONNECTION_GUIDE.md
+#	new file:   DATABASE_FRONTEND_MAP.md
+#	modified:   src/api/auth.js
+#	modified:   src/api/flight.js
+#	modified:   src/api/order.js
+#	new file:   src/api/request.js
+#	modified:   src/views/AdminView.vue
+#	modified:   src/views/CustomerView.vue
+#	modified:   vite.config.js
+#
+# Changes not staged for commit:
+#	modified:   src/views/AdminView.vue
+#	modified:   src/views/CustomerView.vue
+#
+# Untracked files:
+#	sql/
+#

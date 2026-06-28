@@ -1,0 +1,19 @@
+/* 清除浏览器默认边距，并强制撑满全屏 */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  font-family: 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+  background-color: #f4f7fa; /* 统一浅色底色 */
+}
+
+/* 强制 Vue 的挂载点撑满整个屏幕，取消 Vite 的默认居中和宽度限制 */
+#app {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+}
