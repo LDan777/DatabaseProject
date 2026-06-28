@@ -52,6 +52,50 @@ const toastMessage = ref('')
 const showBookingToast = ref(false)
 const bookedFlight = ref(null)
 
+// 热门资讯数据
+const hotNews = ref([
+  {
+    id: 1,
+    title: '2026年夏季航空出行预测：热门目的地TOP10出炉',
+    summary: '随着暑期旅游旺季到来，航空出行需求大幅攀升。三亚、成都、昆明等城市成为热门目的地…',
+    icon: 'fas fa-fire',
+    color: '#f97316',
+    url: 'https://www.caacnews.com.cn/',
+    date: '2026-06-25'
+  },
+  {
+    id: 2,
+    title: '民航局发布新版旅客服务规范，退改签更便捷',
+    summary: '新版规范进一步简化退改签流程，旅客通过航司官方渠道可一键完成操作，资金到账时间缩短50%…',
+    icon: 'fas fa-file-alt',
+    color: '#3b82f6',
+    url: 'https://www.caac.gov.cn/',
+    date: '2026-06-20'
+  },
+  {
+    id: 3,
+    title: '国产大飞机C919执飞航线突破50条，覆盖主要城市',
+    summary: '截至6月底，C919已累计商业运行超过1万小时，旅客运输量突破百万人次，准点率高达95%…',
+    icon: 'fas fa-rocket',
+    color: '#10b981',
+    url: 'https://www.comac.cc/',
+    date: '2026-06-18'
+  },
+  {
+    id: 4,
+    title: 'DS航空联合多家航司推出暑期学生专属优惠',
+    summary: '全日制在校学生凭有效证件可享受机票8折优惠，国际航线更有额外行李额度赠送…',
+    icon: 'fas fa-graduation-cap',
+    color: '#8b5cf6',
+    url: 'https://www.example.com/',
+    date: '2026-06-15'
+  }
+])
+
+const openNewsUrl = (url) => {
+  window.open(url, '_blank')
+}
+
 // 通用提示弹窗方法
 const showToast = (msg) => {
   toastMessage.value = msg
@@ -248,8 +292,10 @@ const loadMyTickets = async () => {
         id: t.ticket_id,
         flight: t.flight_no,
         cabin: t.cabin_level,
-        from: departure.value,
-        to: destination.value,
+        from: t.dep_city_name || '',
+        to: t.arr_city_name || '',
+        dep_city: t.dep_city_name || '',
+        arr_city: t.arr_city_name || '',
         dep_airport: t.dep_airport || '',
         arr_airport: t.arr_airport || '',
         depart_time: (t.depart_time_actual || t.depart_time || '').substring(0,5),
@@ -257,8 +303,6 @@ const loadMyTickets = async () => {
         date: t.fly_date ? t.fly_date.slice(0, 10).replace(/-/g, '/') : '',
         status: t.ticket_status,
         price: t.real_price,
-        dep_city: t.dep_city_name || '',
-        arr_city: t.arr_city_name || '',
         dep_city_code: t.dep_city_code || '',
         arr_city_code: t.arr_city_code || ''
       }))
@@ -350,7 +394,7 @@ const _oldBook = async (flight) => {
 }
 
 const handleRefund = async (ticketId) => {
-  if (!confirm('确定要申请退票并退还座位配额吗？')) return
+  if (!confirm('是否确定退票？')) return
   try {
     const response = await axios.post(`${API_BASE}/refund_ticket`, { ticket_id: ticketId })
     if (response.data.code === 200) {
@@ -367,8 +411,8 @@ const handleRefund = async (ticketId) => {
 
 const openChangeMode = (ticket) => {
   changeTicket.value = ticket
-  departure.value = ticket.dep_city || ticket.dep_city_code || ''
-  destination.value = ticket.arr_city || ticket.arr_city_code || ''
+  departure.value = ticket.dep_city || ticket.from || ticket.dep_city_code || ''
+  destination.value = ticket.arr_city || ticket.to || ticket.arr_city_code || ''
   travelDate.value = ''
   isChangeMode.value = true
   activeTab.value = 'flights'
@@ -519,6 +563,23 @@ const handleServiceClick = () => {
             <div class="service-item" @click="handleServiceClick"><i class="fas fa-shield-halved color-green"></i><span>行程保险</span></div>
             <div class="service-item" @click="handleServiceClick"><i class="fas fa-book color-yellow"></i><span>乘机指南</span></div>
           </div>
+
+          <h4 class="section-label" style="margin-top: 30px;">热门资讯</h4>
+          <div class="news-grid">
+            <div v-for="news in hotNews" :key="news.id" class="news-card card-shadow" @click="openNewsUrl(news.url)">
+              <div class="news-icon-wrap" :style="{ background: news.color + '15' }">
+                <i :class="news.icon" :style="{ color: news.color }"></i>
+              </div>
+              <div class="news-content">
+                <div class="news-title">{{ news.title }}</div>
+                <div class="news-summary">{{ news.summary }}</div>
+                <div class="news-meta">
+                  <span class="news-date"><i class="far fa-clock"></i> {{ news.date }}</span>
+                  <span class="news-link">阅读全文 <i class="fas fa-arrow-right"></i></span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div v-if="activeTab === 'flights'" class="view-flights">
@@ -541,7 +602,6 @@ const handleServiceClick = () => {
                   <img src="https://img.icons8.com/color/48/airplane-mode-on.png" width="20"/>
                   <span>云川航空 · {{ f.flight_no }}</span>
                   <span class="aircraft-badge">{{ f.plane_model }}</span>
-                  <span v-if="f.season_type" :class="'el-tag ' + (f.season_type==='旺季'?'danger':f.season_type==='淡季'?'info':'')" style="font-size:11px;margin-left:6px;">{{ f.season_type }}</span>
                 </div>
               </div>
               <div class="t-mid">
@@ -755,7 +815,7 @@ const handleServiceClick = () => {
     <Transition name="fade">
       <div v-if="showBookingToast" class="booking-toast">
         <i class="fas fa-check-circle"></i>
-        <span>预订成功！航班 {{ bookedFlight?.flight_no }} 已扣减座位配额。</span>
+        <span>预订成功！</span>
       </div>
     </Transition>
     
@@ -819,6 +879,16 @@ const handleServiceClick = () => {
 .price-tag { background: #fee2e2; color: #ef4444; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 8px; font-weight: 700; }
 .amount { font-size: 28px; font-weight: 800; color: #ef4444; }
 .btn-book-now { background: #38bdf8; color: #fff; border: none; padding: 10px 30px; border-radius: 30px; font-weight: 700; cursor: pointer; }
+.news-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 40px; }
+.news-card { padding: 20px; display: flex; gap: 16px; cursor: pointer; transition: 0.3s; border-left: 4px solid transparent; }
+.news-card:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(56,189,248,0.15); }
+.news-icon-wrap { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 1.2rem; }
+.news-content { flex: 1; min-width: 0; }
+.news-title { font-size: 15px; font-weight: 700; color: #1e293b; margin-bottom: 6px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.news-summary { font-size: 13px; color: #64748b; line-height: 1.5; margin-bottom: 10px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.news-meta { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+.news-date { color: #94a3b8; }
+.news-link { color: #38bdf8; font-weight: 600; }
 .settings-card { padding: 10px 40px 40px; margin-bottom: 40px; }
 .info-row { display: flex; justify-content: space-between; align-items: center; padding: 25px 0; border-bottom: 1px solid #f1f5f9; }
 .btn-logout { width: 100%; padding: 15px; background: #fee2e2; color: #ef4444; border: none; border-radius: 12px; font-weight: 700; font-size: 16px; cursor: pointer; margin-top: 20px; }

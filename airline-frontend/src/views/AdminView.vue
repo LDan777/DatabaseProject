@@ -32,6 +32,7 @@ const loginError = ref('')
 // --- 2. 核心导航与状态（必须优先声明，供 watch / computed / onMounted 引用）---
 const activeMenu = ref('dashboard')
 const orderFilter = ref('ALL')
+const orderSearchQuery = ref('')
 const isCollapse = ref(false)
 
 // ===================== 实时刷新定时器 =====================
@@ -67,6 +68,7 @@ onMounted(async () => {
   await loadFlights()
   await loadFlightInstances()
   await loadUsers()
+  await loadOrders()
   startAutoRefresh()
 })
 
@@ -78,6 +80,7 @@ watch(activeMenu, (val) => {
   if (val === 'flights') loadFlightInstances()
   if (val === 'routes') loadFlights()
   if (val === 'users') loadUsers()
+  if (val === 'orders') loadOrders()
 })
 
 const handleAdminLogin = () => {
@@ -126,12 +129,65 @@ const airportForm = ref({ airport_code: '', airport_name: '', area_code: '' })
 
 const flights = ref([])
 
-const orders = ref([
-  { id: 'ORD001', name: '王芳', flightNo: 'MU5101', date: '05-10', cabin: '经济', price: 640, status: ORDER_STATUS.PAID, needManual: false, manualReason: '', userMessage: '' },
-  { id: 'ORD002', name: '陈建国', flightNo: 'CA1831', date: '05-12', cabin: '头等', price: 2800, status: ORDER_STATUS.PENDING, needManual: true, manualReason: '支付延时异常', userMessage: '我已扣款但状态未更新，请人工确认。' },
-  { id: 'ORD003', name: '刘洋', flightNo: 'CZ6201', date: '05-10', cabin: '经济', price: 420, status: ORDER_STATUS.REFUNDED, needManual: true, manualReason: '用户申请人工退改', userMessage: '请改签到下午班次。' },
-  { id: 'ORD004', name: '吴磊', flightNo: 'MU5101', date: '05-10', cabin: '经济', price: 1280, status: ORDER_STATUS.COMPLETED, needManual: false, manualReason: '', userMessage: '' }
-])
+const orders = ref([])
+const loadOrders = async () => {
+  try {
+    const res = await axios.get(`${API_BASE}/admin/ticket_record/list`)
+    if (res.data && res.data.code === 200) {
+      const rawData = Array.isArray(res.data.data) ? res.data.data : []
+      orders.value = rawData.map(t => {
+        try {
+          const safe = (val) => (val !== null && val !== void 0 ? val : '')
+          let dateStr = ''
+          if (t.fly_date) {
+            try { dateStr = String(t.fly_date).slice(0, 10) } catch (_) { dateStr = '' }
+          }
+          return {
+            ticket_id: safe(t.ticket_id),
+            id_card: safe(t.id_card),
+            name: safe(t.passenger_name) || safe(t.id_card) || '未知乘客',
+            flightNo: safe(t.flight_no),
+            date: dateStr,
+            cabin: safe(t.cabin_level),
+            price: safe(t.real_price),
+            status: safe(t.ticket_status),
+            phone: safe(t.phone),
+            dep_airport: safe(t.dep_airport),
+            arr_airport: safe(t.arr_airport)
+          }
+        } catch (rowErr) {
+          console.warn('订单行解析失败:', rowErr, t)
+          return {
+            ticket_id: safeDef(t, 'ticket_id'), id_card: safeDef(t, 'id_card'),
+            name: safeDef(t, 'passenger_name') || safeDef(t, 'id_card') || '解析异常',
+            flightNo: safeDef(t, 'flight_no'), date: '', cabin: safeDef(t, 'cabin_level'),
+            price: safeDef(t, 'real_price'), status: safeDef(t, 'ticket_status'),
+            phone: safeDef(t, 'phone'), dep_airport: safeDef(t, 'dep_airport'),
+            arr_airport: safeDef(t, 'arr_airport')
+          }
+        }
+      })
+      if (rawData.length > 0 && orders.value.length === 0) {
+        triggerToast('订单数据格式异常，已加载但无法解析全部记录', 'warning')
+      }
+      if (rawData.length === 0) {
+        triggerToast('未查询到任何订单记录', 'info')
+      }
+    } else {
+      triggerToast('订单数据加载失败: ' + (res.data?.msg || '返回格式异常'), 'error')
+    }
+  } catch (e) {
+    console.error('loadOrders error:', e)
+    const msg = e.response?.data?.msg || e.response?.data?.message || e.message || '未知网络错误'
+    triggerToast('订单数据加载失败: ' + msg, 'error')
+  }
+}
+
+// 通用安全兜底工具函数（用于 rowErr 分支，不依赖闭包 try 内声明的 safe）
+const safeDef = (obj, key) => {
+  const v = (obj && obj[key] !== null && obj[key] !== void 0) ? obj[key] : ''
+  return v
+}
 
 const aircraftLibrary = ref([
   { code: 'A320', model: 'Airbus A320', typicalSeats: '8F/150Y' },
@@ -144,7 +200,6 @@ const aircraftLibrary = ref([
 
 // --- 4. 复杂的查询与过滤 ---
 const flightQuery = ref({ dep: '', arr: '', schedule: '', status: '' })
-const orderSearchQuery = ref('') // 新增：订单搜索
 const flightSearchKeyword = ref('')
 const routeSearchKeywordForFlight = ref('')
 const flightLibraryKeyword = ref('')
@@ -764,7 +819,7 @@ const deleteItem = async (listType, idStr) => {
   if(listType === 'news') systemNews.value = systemNews.value.filter(n => n.id !== idStr)
   if(listType === 'user') users.value = users.value.filter(u => u.id !== idStr)
   if(listType === 'route') routes.value = routes.value.filter(r => r.id !== idStr)
-  if(listType === 'order') orders.value = orders.value.filter(o => o.id !== idStr)
+  if(listType === 'order') orders.value = orders.value.filter(o => o.ticket_id !== idStr)
   triggerToast('删除成功')
 }
 
@@ -1249,12 +1304,12 @@ const breadcrumb = computed(() => {
               <div class="el-card">
                 <div class="el-card-header"><span><i class="fas fa-clock-rotate-left"></i> 最新订单</span></div>
                 <div class="recent-order-list">
-                  <div class="recent-order-item" v-for="order in recentOrders" :key="order.id">
-                    <div>
-                      <div class="recent-order-name">{{ order.name }} · {{ order.flightNo }}</div>
-                      <div class="recent-order-sub">{{ order.id }} / {{ order.date }}</div>
-                    </div>
-                    <span class="el-tag" :class="order.status===ORDER_STATUS.PAID || order.status===ORDER_STATUS.COMPLETED ? 'success' : order.status===ORDER_STATUS.PENDING ? 'warning' : 'danger'">{{ order.status }}</span>
+              <div class="recent-order-item" v-for="order in recentOrders" :key="order.ticket_id">
+                <div>
+                  <div class="recent-order-name">{{ order.name }} · {{ order.flightNo }}</div>
+                  <div class="recent-order-sub">#{{ order.ticket_id }} / {{ order.date }}</div>
+                </div>
+                <span class="el-tag" :class="order.status==='已支付' ? 'info' : order.status==='已改签' ? 'warning' : order.status==='已退票' ? 'danger' : ''">{{ order.status }}</span>
                   </div>
                 </div>
               </div>
@@ -1298,15 +1353,15 @@ const breadcrumb = computed(() => {
               <thead><tr><th>流水号</th><th>用户</th><th>异常原因</th><th>用户留言</th><th>状态</th><th class="text-center">操作</th></tr></thead>
               <tbody>
                 <tr v-if="manualOrders.length === 0"><td colspan="6" class="text-center py-3 text-secondary">当前没有需要人工处理的订单</td></tr>
-                <tr v-for="o in manualOrders" :key="o.id">
-                  <td>{{ o.id }}</td>
+                <tr v-for="o in manualOrders" :key="o.ticket_id">
+                  <td>{{ o.ticket_id }}</td>
                   <td>{{ o.name }}<br><span class="text-secondary">{{ o.flightNo }}</span></td>
                   <td>{{ o.manualReason || '用户留言触发' }}</td>
                   <td>{{ o.userMessage || '无留言' }}</td>
                   <td><span class="el-tag warning">人工处理中</span></td>
                   <td class="text-center">
                     <button class="el-button text primary" @click="toggleManualOrder(o)">标记已处理</button>
-                    <button class="el-button text danger" @click="deleteItem('order', o.id)">移除</button>
+                    <button class="el-button text danger" @click="deleteItem('order', o.ticket_id)">移除</button>
                   </td>
                 </tr>
               </tbody>
@@ -1496,35 +1551,32 @@ const breadcrumb = computed(() => {
               <div class="operate-left"><i class="fas fa-list"></i> 全域订单流水表</div>
               <div class="operate-right" style="display: flex; gap: 10px; align-items: center;">
                 <input v-model="orderSearchQuery" class="el-input__inner" placeholder="搜索姓名/航班号" style="width:180px;">
+                <button class="el-button default small" @click="loadOrders()" title="手动刷新" style="margin-left:6px;"><i class="fas fa-sync-alt"></i> 刷新</button>
                 <select v-model="orderFilter" class="el-input__inner" style="width: 120px;">
                   <option value="ALL">全部状态</option>
-                  <option :value="ORDER_STATUS.PAID">已支付</option>
-                  <option :value="ORDER_STATUS.PENDING">待支付</option>
-                  <option :value="ORDER_STATUS.COMPLETED">已完成</option>
-                  <option :value="ORDER_STATUS.REFUNDED">已退款</option>
+                  <option value="已支付">已支付</option>
+                  <option value="已改签">已改签</option>
+                  <option value="已退票">已退票</option>
                 </select>
               </div>
             </div>
             <table class="el-table">
-              <thead><tr><th>流水号</th><th>交易信息</th><th>日期/舱位</th><th>金额</th><th>系统状态</th><th class="text-center">操作</th></tr></thead>
+              <thead><tr><th>流水号</th><th>乘客信息</th><th>航班号</th><th>日期/舱位</th><th>金额</th><th>状态</th><th class="text-center">路线</th></tr></thead>
               <tbody>
-                <tr v-if="filteredOrders.length === 0"><td colspan="6" class="text-center py-3 text-secondary">暂无订单数据</td></tr>
-                <tr v-for="o in filteredOrders" :key="o.id">
-                  <td>{{ o.id }}</td>
-                  <td><b>{{ o.name }}</b><br><span class="text-secondary">航班: {{ o.flightNo }}</span></td>
+                <tr v-if="filteredOrders.length === 0"><td colspan="7" class="text-center py-3 text-secondary">暂无订单数据，点击刷新按钮从数据库加载</td></tr>
+                <tr v-for="o in filteredOrders" :key="o.ticket_id">
+                  <td>{{ o.ticket_id }}</td>
+                  <td><b>{{ o.name }}</b><br><span class="text-secondary">身份证: {{ maskIdCard(o.id_card) }}</span></td>
+                  <td>{{ o.flightNo }}</td>
                   <td>{{ o.date }}<br><span class="text-secondary">{{ o.cabin }}舱</span></td>
-                  <td class="text-danger">¥{{ o.price }}</td>
+                  <td class="text-danger font-weight-bold">¥{{ o.price }}</td>
                   <td>
-                    <span v-if="o.status===ORDER_STATUS.PAID || o.status===ORDER_STATUS.COMPLETED" class="el-tag success">{{ o.status }}</span>
-                    <span v-else-if="o.status===ORDER_STATUS.PENDING" class="el-tag warning">{{ o.status }}</span>
-                    <span v-else class="el-tag danger">{{ o.status }}</span>
+                    <span v-if="o.status==='已支付'" class="el-tag info">已支付</span>
+                    <span v-else-if="o.status==='已改签'" class="el-tag warning">已改签</span>
+                    <span v-else-if="o.status==='已退票'" class="el-tag danger">已退票</span>
+                    <span v-else class="el-tag">{{ o.status }}</span>
                   </td>
-                  <td class="text-center">
-                    <button class="el-button text primary" @click="toggleManualOrder(o)">{{ o.needManual ? '改自动' : '转人工' }}</button>
-                    <button class="el-button text danger" @click="handleCancelFlightAction(o)">一键取消班次</button>
-                    <button class="el-button text primary" @click="openEditModal(o, 'order')">改状态</button>
-                    <button class="el-button text danger" @click="deleteItem('order', o.id)">移除</button>
-                  </td>
+                  <td class="text-center" style="font-size:12px;color:#6b7280;">{{ o.dep_airport || '-' }} → {{ o.arr_airport || '-' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -1931,6 +1983,7 @@ const breadcrumb = computed(() => {
 @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
 
 .text-center { text-align: center; }
+.font-weight-bold { font-weight: 700; }
 .text-primary { color: var(--el-color-primary); }
 .text-secondary { color: var(--el-text-color-secondary); font-size: 13px;}
 .text-danger { color: var(--el-color-danger); }

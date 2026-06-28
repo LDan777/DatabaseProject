@@ -1,0 +1,17 @@
+const fs = require('fs');
+const path = 'd:/Project/DatabaseProject/airline-frontend/src/views/AdminView.vue';
+let c = fs.readFileSync(path, 'utf8');
+
+// 1. Fix "新增航班" button
+c = c.replace('@click="openEditModal(null, \'flight\')"', '@click="openFlightModal(null)"');
+
+// 2. Remove old flight template from edit modal
+const oldFlightTpl = '\r\n            <template v-if="currentEditType === \'flight\'">\r\n               <div class="el-form-item"><label class="el-form-item__label">航班号<span class="text-danger">*</span></label>\r\n                 <div class="el-form-item__content"><input v-model="editForm.flightNo" class="el-input__inner" :disabled="!isAddMode" placeholder="如 MU5101"></div>\r\n               </div>\r\n               <div class="el-form-item"><label class="el-form-item__label">起飞机场<span class="text-danger">*</span></label>\r\n                 <div class="el-form-item__content"><input v-model="editForm.dep" class="el-input__inner" placeholder="3位大写代码，如 SHA"></div>\r\n               </div>\r\n               <div class="el-form-item"><label class="el-form-item__label">到达机场<span class="text-danger">*</span></label>\r\n                 <div class="el-form-item__content"><input v-model="editForm.arr" class="el-input__inner" placeholder="3位大写代码，如 PKX"></div>\r\n               </div>\r\n               <div class="el-form-item"><label class="el-form-item__label">航班状态</label>\r\n                 <div class="el-form-item__content"><select v-model="editForm.status" class="el-input__inner"><option value="Scheduled">计划中</option><option value="Flying">飞行中</option><option value="Delayed">延误</option><option value="Arrived">已到达</option><option value="Cancelled">已取消</option></select></div>\r\n               </div>\r\n               <div class="el-form-item"><label class="el-form-item__label">机型</label>\r\n                 <div class="el-form-item__content"><input v-model="editForm.aircraft" class="el-input__inner" placeholder="如 A330"></div>\r\n               </div>\r\n               <div class="el-form-item"><label class="el-form-item__label">基准价</label>\r\n                 <div class="el-form-item__content"><input v-model="editForm.price" type="number" min="0" class="el-input__inner"></div>\r\n               </div>\r\n             </template>';
+c = c.replace(oldFlightTpl, '');
+
+// 3. Remove old route template
+const oldRouteTpl = '\r\n             <template v-if="currentEditType === \'route\'">\r\n               <div class="el-form-item"><label class="el-form-item__label">出发地<span class="text-danger">*</span></label>\r\n                 <div class="el-form-item__content"><input v-model="editForm.origin" class="el-input__inner" placeholder="如 PEK"></div>\r\n               </div>\r\n               <div class="el-form-item"><label class="el-form-item__label">目的地<span class="text-danger">*</span></label>\r\n                 <div class="el-form-item__content"><input v-model="editForm.destination" class="el-input__inner" placeholder="如 SHA"></div>\r\n               </div>\r\n               <div class="el-form-item"><label class="el-form-item__label">航线类型</label>\r\n                 <div class="el-form-item__content"><input v-model="editForm.type" class="el-input__inner" placeholder="如 国内干线"></div>\r\n               </div>\r\n             </template>';
+c = c.replace(oldRouteTpl, '');
+
+fs.writeFileSync(path, c, 'utf8');
+console.log('Part 1: Old templates removed, button fixed!');

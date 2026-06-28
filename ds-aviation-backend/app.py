@@ -143,7 +143,9 @@ def my_ticket():
     id_card = request.args.get("id_card")
     conn, cur = get_db_conn()
     sql = """
-    SELECT tr.*, f.flight_no, f.plane_model, f.depart_time, f.arrive_time,
+    SELECT tr.ticket_id, tr.id_card, tr.flight_no, tr.fly_date,
+           tr.cabin_level, tr.real_price, tr.ticket_status,
+           f.flight_no AS flight_no_display, f.plane_model, f.depart_time, f.arrive_time,
            fi.flight_status, fi.depart_time_actual,
            a1.airport_name AS dep_airport, a2.airport_name AS arr_airport,
            c1.area_code AS dep_city_code, c2.area_code AS arr_city_code,
@@ -473,14 +475,17 @@ def change_ticket():
         else:
             cur.execute("UPDATE flight_instance SET economy_remain=economy_remain-1 WHERE flight_no=%s AND fly_date=%s", (new_flight_no, new_fly_date))
         
-        # 4. 更新订单、状态改为已改签
-        cur.execute("""
-        UPDATE ticket_record 
-        SET flight_no=%s, fly_date=%s, ticket_status='已改签' 
-        WHERE ticket_id=%s
-        """, (new_flight_no, new_fly_date, ticket_id))
+        # 5. 保留旧订单记录并标记"已改签"（不修改航班号与日期，保留原行程历史）
+        cur.execute("UPDATE ticket_record SET ticket_status='已改签' WHERE ticket_id=%s", (ticket_id,))
+        
+        # 6. 为新航班创建新订单（状态=已支付）
+        cur.execute(
+            "INSERT INTO ticket_record(id_card, flight_no, fly_date, cabin_level, real_price, ticket_status) VALUES (%s, %s, %s, %s, %s, '已支付')",
+            (old["id_card"], new_flight_no, new_fly_date, old["cabin_level"], old["real_price"])
+        )
+        
         conn.commit()
-        return jsonify({"code":200,"msg":"改签成功"})
+        return jsonify({"code":200,"msg":"改签成功，新订单已生成"})
     except Exception as e:
         conn.rollback()
         return jsonify({"code":500,"msg":str(e)})
@@ -490,6 +495,39 @@ def change_ticket():
 # ====================== 管理员接口（城市、机场、航班、航班实例CRUD） ======================
 
 # 乘客列表（管理员查看，密码不返回）
+# 订单流水（管理员查看全部 ticket_record）
+@app.route("/api/admin/ticket_record/list", methods=["GET"])
+def admin_ticket_record_list():
+    conn, cur = get_db_conn()
+    sql = """
+    SELECT tr.*, p.name AS passenger_name, p.phone,
+           f.depart_time, f.arrive_time,
+           a1.airport_name AS dep_airport, a2.airport_name AS arr_airport
+    FROM ticket_record tr
+    LEFT JOIN passenger p ON tr.id_card = p.id_card
+    LEFT JOIN flight f ON tr.flight_no = f.flight_no
+    LEFT JOIN flight_stop s1 ON f.flight_no=s1.flight_no AND s1.stop_sort='起飞'
+    LEFT JOIN airport a1 ON s1.airport_code=a1.airport_code
+    LEFT JOIN flight_stop s2 ON f.flight_no=s2.flight_no AND s2.stop_sort='降落'
+    LEFT JOIN airport a2 ON s2.airport_code=a2.airport_code
+    ORDER BY tr.ticket_id DESC
+    """
+    cur.execute(sql)
+    rows = cur.fetchall()
+    conn.close()
+    for r in rows:
+        for k in ("depart_time", "arrive_time"):
+            v = r.get(k)
+            if v is not None and hasattr(v, "total_seconds"):
+                total = int(v.total_seconds())
+                h, m = divmod(total // 60, 60)
+                r[k] = f"{h:02d}:{m:02d}:{total % 60:02d}"
+        if hasattr(r.get("fly_date"), "isoformat"):
+            r["fly_date"] = r["fly_date"].isoformat()
+        if hasattr(r.get("create_time"), "isoformat"):
+            r["create_time"] = r["create_time"].isoformat()
+    return jsonify({"code": 200, "data": rows})
+
 @app.route("/api/admin/passenger/list", methods=["GET"])
 def passenger_list():
     conn, cur = get_db_conn()
