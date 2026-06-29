@@ -3,6 +3,8 @@ from flask_cors import CORS
 import pymysql
 import hashlib
 import getpass
+import threading
+import time
 
 from datetime import datetime, date, timedelta
 
@@ -53,6 +55,59 @@ def encrypt_pwd(pwd):
         return hashlib.md5(pwd.encode('utf-8')).hexdigest()
     except Exception:
         return hashlib.md5(str(pwd).encode('utf-8')).hexdigest()
+
+# ====================== 后台定时任务：检查过期航班并更新状态 ======================
+def check_and_update_completed_flights():
+    """每15秒检查一次：如果航班到达时间已过，自动更新航班实例和订单状态"""
+    while True:
+        try:
+            time.sleep(15)  # 每15秒检查一次
+            conn, cur = get_db_conn()
+            
+            # 获取当前时刻
+            now = datetime.now()
+            now_time_str = now.strftime("%H:%M:%S")
+            today_str = now.strftime("%Y-%m-%d")
+            
+            # 1. 检查已到达的航班实例（日期小于今天，或日期等于今天但到达时间已过）
+            cur.execute("""
+                SELECT fi.flight_no, fi.fly_date, fi.arrive_time_actual
+                FROM flight_instance fi
+                WHERE fi.flight_status = '计划'
+                AND (fi.fly_date < %s 
+                     OR (fi.fly_date = %s AND fi.arrive_time_actual <= %s))
+            """, (today_str, today_str, now_time_str))
+            
+            completed_instances = cur.fetchall()
+            
+            for inst in completed_instances:
+                flight_no = inst["flight_no"]
+                fly_date = inst["fly_date"]
+                
+                # 更新航班实例状态为"完成"
+                cur.execute("""
+                    UPDATE flight_instance 
+                    SET flight_status = '完成'
+                    WHERE flight_no = %s AND fly_date = %s
+                """, (flight_no, fly_date))
+                
+                # 更新该航班所有"已支付"订单为"已完成"
+                cur.execute("""
+                    UPDATE ticket_record 
+                    SET ticket_status = '已完成'
+                    WHERE flight_no = %s AND fly_date = %s 
+                    AND ticket_status = '已支付'
+                """, (flight_no, fly_date))
+            
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[定时任务] 检查过期航班失败: {e}")
+            try:
+                conn.rollback()
+                conn.close()
+            except:
+                pass
 
 def get_season_type(fly_date: str) -> str:
     d = datetime.strptime(fly_date, "%Y-%m-%d").date()
@@ -891,6 +946,14 @@ def flight_edit():
 def flight_del():
     no = request.json["flight_no"]
     conn, cur = get_db_conn()
+    # 在删除实例之前，将该航班所有未完成的订单标记为"航班取消"
+    cur.execute(
+        """UPDATE ticket_record
+           SET ticket_status = '航班取消'
+           WHERE flight_no = %s
+             AND ticket_status NOT IN ('已退票', '已改签', '航班取消')""",
+        (no,)
+    )
     cur.execute("DELETE FROM flight_instance WHERE flight_no=%s", (no,))
     cur.execute("DELETE FROM flight WHERE flight_no=%s", (no,))
     conn.commit()
@@ -1008,5 +1071,10 @@ def flight_instance_update():
     return jsonify({"code":200,"msg":"航班实例设置完成"})
 
 if __name__ == "__main__":
+    # 启动后台定时任务线程
+    check_thread = threading.Thread(target=check_and_update_completed_flights, daemon=True)
+    check_thread.start()
+    print("[系统] 后台定时任务已启动，每15秒检查一次过期航班...")
+    
     app.run(host="0.0.0.0", port=5000, debug=True)
     # ======================【需要你修改3：后端启动端口】======================

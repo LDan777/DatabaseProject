@@ -115,7 +115,8 @@ const handleLogout = () => {
 // --- 3. 模拟数据库实体 (默认值) ---
 const systemNews = ref([
   { id: 'N01', title: '夏季航季调整公告：新增成都天府航线', author: '运营部', time: '2026-05-01', status: '已发布', content: '为提升华西地区运力，自5月起逐步增加成都天府往返班次。', link: 'https://www.example.com/notice/summer' },
-  { id: 'N02', title: '系统维护通知：主数据库升级', author: 'IT运维', time: '2026-04-28', status: '草稿', content: '维护窗口预计为周六凌晨02:00-04:00，期间部分查询功能会有短时抖动。', link: '' }
+  { id: 'N02', title: '系统维护通知：主数据库升级', author: 'IT运维', time: '2026-04-28', status: '草稿', content: '维护窗口预计为周六凌晨02:00-04:00，期间部分查询功能会有短时抖动。', link: '' },
+  { id: 'N03', title: 'DS航空祝大家假期愉快！', author: '第五组', time: '2026-07-01', status: '已发布', content: 'DS航空全体机组人员及运营团队祝大家暑假快乐！', link: 'https://www.example.com/notice/summer' }
 ])
 
 const users = ref([])
@@ -277,14 +278,15 @@ const triggerToast = (msg, type = 'success') => {
 
 // ===================== 城市管理 CRUD =====================
 const loadCities = async () => {
-  try { const res = await axios.get(`${API_BASE}/admin/city/list`); if (res.data.code === 200) cities.value = res.data.data } catch (e) {
-    // 后端不可用时，使用本地 Mock 兜底数据
-    cities.value = [
-      { area_code: 'SHA', city_name: '上海', province: '上海市' },
-      { area_code: 'PEK', city_name: '北京', province: '北京市' },
-      { area_code: 'CAN', city_name: '广州', province: '广东省' },
-      { area_code: 'CTU', city_name: '成都', province: '四川省' }
-    ]
+  try {
+    const res = await axios.get(`${API_BASE}/admin/city/list`)
+    if (res.data.code === 200) {
+      cities.value = res.data.data
+    } else {
+      triggerToast('城市列表加载失败: ' + (res.data.msg || '返回异常'), 'error')
+    }
+  } catch (e) {
+    triggerToast('城市数据加载异常: ' + (e.response?.data?.msg || e.message), 'error')
   }
 }
 const openCityModal = (city = null) => {
@@ -326,16 +328,15 @@ const filteredCities = computed(() => {
 
 // ===================== 机场管理 CRUD =====================
 const loadAirports = async () => {
-  try { const res = await axios.get(`${API_BASE}/admin/airport/list`); if (res.data.code === 200) airports.value = res.data.data } catch (e) {
-    // 后端不可用时，使用本地 Mock 兜底数据
-    airports.value = [
-      { airport_code: 'SHA', airport_name: '上海虹桥国际机场', area_code: 'SHA' },
-      { airport_code: 'PVG', airport_name: '上海浦东国际机场', area_code: 'SHA' },
-      { airport_code: 'PEK', airport_name: '北京首都国际机场', area_code: 'PEK' },
-      { airport_code: 'PKX', airport_name: '北京大兴国际机场', area_code: 'PEK' },
-      { airport_code: 'CAN', airport_name: '广州白云国际机场', area_code: 'CAN' },
-      { airport_code: 'CTU', airport_name: '成都天府国际机场', area_code: 'CTU' }
-    ]
+  try {
+    const res = await axios.get(`${API_BASE}/admin/airport/list`)
+    if (res.data.code === 200) {
+      airports.value = res.data.data
+    } else {
+      triggerToast('机场列表加载失败: ' + (res.data.msg || '返回异常'), 'error')
+    }
+  } catch (e) {
+    triggerToast('机场数据加载异常: ' + (e.response?.data?.msg || e.message), 'error')
   }
 }
 const openAirportModal = (ap = null) => {
@@ -1100,7 +1101,7 @@ const pendingTasks = computed(() => ([
   { id: 'T03', title: '今日新增资讯草稿', value: systemNews.value.filter(n => n.status === '草稿').length, level: 'info' }
 ]))
 
-const recentOrders = computed(() => orders.value.slice(0, 4))
+const recentOrders = computed(() => orders.value.slice(0, 5))
 
 // 面包屑
 const breadcrumb = computed(() => {
@@ -1131,17 +1132,17 @@ const breadcrumb = computed(() => {
         <i class="fas fa-user"></i>
         <input v-model="adminUser.username" type="text" placeholder="管理员账号">
       </div>
-      <div class="login-input-group">
-        <i class="fas fa-lock"></i>
-        <input v-model="adminUser.password" type="password" placeholder="授权口令 " @keyup.enter="handleAdminLogin">
-      </div>
-      
-        <button class="btn-glass" @click="handleAdminLogin">登录系统</button>
-        <div style="margin-top: 16px; text-align: center;">
-          <button class="back-to-user-from-login-btn" @click="goToUserHome">返回用户界面</button>
-        </div>
-      </div>
-    </div>
+       <div class="login-input-group">
+         <i class="fas fa-lock"></i>
+         <input v-model="adminUser.password" type="password" placeholder="授权口令 " @keyup.enter="handleAdminLogin">
+       </div>
+       
+       <button class="btn-glass" @click="handleAdminLogin">登录系统</button>
+       <div style="margin-top: 16px; text-align: center;">
+         <button class="back-to-user-from-login-btn" @click="goToUserHome">返回用户界面</button>
+       </div>
+     </div>
+   </div>
 
   <div v-else class="app-wrapper">
     <aside class="sidebar-container" :class="{ 'collapsed': isCollapse }">
@@ -1184,7 +1185,7 @@ const breadcrumb = computed(() => {
 
       <div class="sidebar-footer">
         <button class="logout-btn" @click="handleLogout">
-          <span>🚪</span>
+          <span></span>
           <span v-show="!isCollapse">退出登录</span>
         </button>
       </div>
@@ -1220,6 +1221,8 @@ const breadcrumb = computed(() => {
                 <div class="el-card-header"><span><i class="fas fa-bolt"></i> 快捷入口</span></div>
                 <div class="quick-link-column">
                   <button class="quick-link-btn" @click="activeMenu = 'users'"><i class="fas fa-user-gear"></i> 用户管理</button>
+                  <button class="quick-link-btn" @click="activeMenu = 'cities'"><i class="fas fa-city"></i> 城市管理</button>
+                  <button class="quick-link-btn" @click="activeMenu = 'airports'"><i class="fas fa-tower-observation"></i> 机场管理</button>
                   <button class="quick-link-btn" @click="activeMenu = 'routes'"><i class="fas fa-route"></i> 航线管理</button>
                   <button class="quick-link-btn" @click="activeMenu = 'flights'"><i class="fas fa-plane"></i> 航班管理</button>
                   <button class="quick-link-btn" @click="activeMenu = 'orders'"><i class="fas fa-receipt"></i> 订单处理</button>
@@ -1282,7 +1285,7 @@ const breadcrumb = computed(() => {
           </div> 
         </div>
         
-        <div>
+        <div v-if="activeMenu === 'dashboard'">
           <div class="el-row">
             <div class="el-col-6">
               <div class="el-card">
@@ -1548,7 +1551,7 @@ const breadcrumb = computed(() => {
         <div v-if="activeMenu === 'orders'" class="standard-view fade-in">
           <div class="table-container table-responsive">
             <div class="operate-container border-bottom">
-              <div class="operate-left"><i class="fas fa-list"></i> 全域订单流水表</div>
+              <div class="operate-left"><i class="fas fa-list"></i> 订单流水表</div>
               <div class="operate-right" style="display: flex; gap: 10px; align-items: center;">
                 <input v-model="orderSearchQuery" class="el-input__inner" placeholder="搜索姓名/航班号" style="width:180px;">
                 <button class="el-button default small" @click="loadOrders()" title="手动刷新" style="margin-left:6px;"><i class="fas fa-sync-alt"></i> 刷新</button>
@@ -1574,6 +1577,7 @@ const breadcrumb = computed(() => {
                     <span v-if="o.status==='已支付'" class="el-tag info">已支付</span>
                     <span v-else-if="o.status==='已改签'" class="el-tag warning">已改签</span>
                     <span v-else-if="o.status==='已退票'" class="el-tag danger">已退票</span>
+                    <span v-else-if="o.status==='航班取消'" class="el-tag danger">航班取消</span>
                     <span v-else class="el-tag">{{ o.status }}</span>
                   </td>
                   <td class="text-center" style="font-size:12px;color:#6b7280;">{{ o.dep_airport || '-' }} → {{ o.arr_airport || '-' }}</td>
