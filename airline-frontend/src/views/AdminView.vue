@@ -28,6 +28,7 @@ const ORDER_STATUS = {
 // --- 1. 登录逻辑与权限 ---
 const isLoggedIn = ref(false)
 const adminUser = ref({ username: '', password: '' })
+const adminName = ref('Admin')
 const loginError = ref('')
 
 // --- 2. 核心导航与状态（必须优先声明，供 watch / computed / onMounted 引用）---
@@ -99,7 +100,9 @@ const handleAdminLogin = () => {
   loginError.value = ''
   if (adminUser.value.username.trim() === 'admin' && adminUser.value.password === '123456') { 
     isLoggedIn.value = true
+    adminName.value = adminUser.value.username
     localStorage.setItem('adminIsLoggedIn', 'true')
+    localStorage.setItem('adminName', adminUser.value.username)
     triggerToast('登录成功，欢迎进入管理系统')
   } else {
     loginError.value = '授权失败：口令或账号不匹配 '
@@ -1202,7 +1205,7 @@ const breadcrumb = computed(() => {
         <div class="nav-right">
           <button class="back-to-user-btn" @click="goToUserHome" style="margin-right: 16px; background: none; border: 1px solid #d8e4f7; color: #1e3a8a; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s;">返回用户界面</button>
           <div class="user-dropdown">
-            <span class="name">Admin</span>
+            <span class="name">{{ adminName }}</span>
             <div class="dropdown-menu">
               <div class="dp-item text-danger" @click="handleLogout"><i class="fas fa-power-off"></i> 退出登录</div>
             </div>

@@ -168,7 +168,7 @@ def register():
         except: pass
         return jsonify({"code": 500, "msg": f"注册失败: {str(e)}"})
 
-# 2. 用户登录（身份证+密码）——已更新：分步校验
+# 2. 用户登录（身份证+密码）——分步校验
 @app.route("/api/login", methods=["POST"])
 def login():
     data = request.json

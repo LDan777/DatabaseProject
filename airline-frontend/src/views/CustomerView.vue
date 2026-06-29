@@ -30,8 +30,8 @@ const tempNameInput = ref('') // 实名认证姓名
 const currentUser = ref({ name: '乘客', level: '普通乘客', location: '中国·上海' })
 
 // --- 搜索状态 ---
-const departure = ref('北京')     // 后端要求传入城市/机场区域代码，如 SHA, PEK
-const destination = ref('上海')   // 后端要求传入城市/机场区域代码
+const departure = ref('上海')     // 后端要求传入城市/机场区域代码，如 SHA, PEK
+const destination = ref('北京')   // 后端要求传入城市/机场区域代码
 const travelDate = ref('2026-07-01')
 
 // --- 页面切换逻辑 ---
@@ -40,6 +40,7 @@ const activeTab = ref('home')
 // --- 行程与航班实时数据 ---
 const nextTrip = ref(null)
 const historyFlights = ref([])
+const historySearchKeyword = ref('')
 const flights = ref([])
 const seasonInfo = ref({})
 const loadingFlights = ref(false)
@@ -110,6 +111,20 @@ const maskedIdCard = computed(() => idCard.value ? idCard.value.replace(/^(.{6})
 // 过滤航班（适配新后端结构字段：flight_no 代替 number）
 const filteredFlights = computed(() => {
   return flights.value
+})
+
+// 过滤行程记录（支持航班号、城市、日期搜索）
+const filteredHistoryFlights = computed(() => {
+  if (!historySearchKeyword.value.trim()) return historyFlights.value
+  const keyword = historySearchKeyword.value.trim().toLowerCase()
+  return historyFlights.value.filter(h => 
+    (h.flight || '').toLowerCase().includes(keyword) ||
+    (h.dep_city || '').toLowerCase().includes(keyword) ||
+    (h.arr_city || '').toLowerCase().includes(keyword) ||
+    (h.dep_airport || '').toLowerCase().includes(keyword) ||
+    (h.arr_airport || '').toLowerCase().includes(keyword) ||
+    (h.date || '').includes(keyword)
+  )
 })
 
 // --- 1. 联合查询航班数据 (精密对齐后端 GET /api/search_flight) ---
@@ -638,8 +653,12 @@ const handleServiceClick = () => {
         <div v-if="activeTab === 'orders'" class="view-profile">
           <h4 class="section-label">我的行程记录</h4>
           <div v-if="isLoggedIn" class="history-list">
-            <div v-if="historyFlights.length === 0" class="no-flights-msg card-shadow">暂无行程订单</div>
-            <div v-for="h in historyFlights" :key="h.id" class="history-card card-shadow">
+            <div class="search-bar-mini" style="margin-bottom: 20px; width: 300px;">
+              <i class="fas fa-search"></i>
+              <input v-model="historySearchKeyword" type="text" placeholder="搜索航班号、城市或日期...">
+            </div>
+            <div v-if="filteredHistoryFlights.length === 0" class="no-flights-msg card-shadow">暂无行程订单</div>
+            <div v-for="h in filteredHistoryFlights" :key="h.id" class="history-card card-shadow">
               <div class="h-date">
                 <div style="font-size:14px;font-weight:700;color:#1e293b;">{{ h.date }}</div>
                 <div style="font-size:12px;color:#38bdf8;">{{ h.depart_time }}</div>
