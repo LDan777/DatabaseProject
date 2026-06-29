@@ -347,7 +347,11 @@ def search_flight():
         }
     })
 
-# 5. 购买机票（生成订单，扣减余票）
+# 5. 购买机票（生成订单，扣减余票）—— 并发安全版本
+# 并发控制策略：
+#   1. SELECT ... FOR UPDATE 对目标行加悲观行锁，阻塞同一航班的并发购票请求
+#   2. UPDATE ... WHERE remain > 0 原子扣减，即使锁粒度失效也不会写出负数
+#   3. 检查 rowcount == 0 判断是否被并发抢光（乐观兜底）
 @app.route("/api/buy_ticket", methods=["POST"])
 def buy_ticket():
     data = request.json
@@ -359,42 +363,60 @@ def buy_ticket():
 
     conn, cur = get_db_conn()
     try:
-        # 0. 校验航班实例是否存在且有余票
+        # 0. 用 FOR UPDATE 对航班实例行加悲观行锁
+        #    同一 (flight_no, fly_date) 的并发请求将在此处串行化排队
         cur.execute(
-            "SELECT first_remain, economy_remain FROM flight_instance WHERE flight_no=%s AND fly_date=%s",
+            "SELECT first_remain, economy_remain FROM flight_instance "
+            "WHERE flight_no=%s AND fly_date=%s FOR UPDATE",
             (flight_no, fly_date)
         )
         inst = cur.fetchone()
         if not inst:
-            conn.close()
+            conn.rollback()
             return jsonify({"code": 400, "msg": "该航班实例不存在或已取消"})
 
         remain = inst["first_remain"] if cabin_level == "头等舱" else inst["economy_remain"]
         if remain <= 0:
-            conn.close()
+            conn.rollback()
             return jsonify({"code": 400, "msg": f"{cabin_level}已售罄，余票不足"})
 
         # 0.5 校验用户是否已购买同一航班（防止重复购票）
         cur.execute(
-            "SELECT 1 FROM ticket_record WHERE id_card=%s AND flight_no=%s AND fly_date=%s AND ticket_status NOT IN ('已退票')",
+            "SELECT 1 FROM ticket_record WHERE id_card=%s AND flight_no=%s AND fly_date=%s "
+            "AND ticket_status NOT IN ('已退票')",
             (id_card, flight_no, fly_date)
         )
         if cur.fetchone():
-            conn.close()
+            conn.rollback()
             return jsonify({"code": 400, "msg": "您已购买过该航班，不可重复购票"})
 
-        # 1. 插入售票记录 状态=已支付
+        # 1. 原子扣减座位：WHERE remain > 0 是第二道防线
+        #    即使锁因配置问题未生效，此条件也能保证不写出负数
+        if cabin_level == "头等舱":
+            cur.execute(
+                "UPDATE flight_instance SET first_remain=first_remain-1 "
+                "WHERE flight_no=%s AND fly_date=%s AND first_remain > 0",
+                (flight_no, fly_date)
+            )
+        else:
+            cur.execute(
+                "UPDATE flight_instance SET economy_remain=economy_remain-1 "
+                "WHERE flight_no=%s AND fly_date=%s AND economy_remain > 0",
+                (flight_no, fly_date)
+            )
+
+        # rowcount == 0 说明刚才的 FOR UPDATE 读到余票后被并发请求抢光
+        if cur.rowcount == 0:
+            conn.rollback()
+            return jsonify({"code": 400, "msg": f"{cabin_level}已售罄，请重新查询"})
+
+        # 2. 插入售票记录 状态=已支付
         sql_ticket = """
         INSERT INTO ticket_record(id_card, flight_no, fly_date, cabin_level, real_price, ticket_status)
         VALUES (%s, %s, %s, %s, %s, '已支付')
         """
         cur.execute(sql_ticket, (id_card, flight_no, fly_date, cabin_level, real_price))
 
-        # 2. 扣减对应舱位剩余座位
-        if cabin_level == "头等舱":
-            cur.execute("UPDATE flight_instance SET first_remain=first_remain-1 WHERE flight_no=%s AND fly_date=%s", (flight_no, fly_date))
-        else:
-            cur.execute("UPDATE flight_instance SET economy_remain=economy_remain-1 WHERE flight_no=%s AND fly_date=%s", (flight_no, fly_date))
         conn.commit()
         return jsonify({"code": 200, "msg": "购票成功"})
     except Exception as e:
@@ -403,37 +425,63 @@ def buy_ticket():
     finally:
         conn.close()
 
-# 6. 退票接口（订单改为已退票，返还座位）
+# 6. 退票接口（订单改为已退票，返还座位）—— 并发安全版本
+# 并发控制：用 FOR UPDATE 锁住订单行，防止同一张票被并发退两次（重复归还座位）
 @app.route("/api/refund_ticket", methods=["POST"])
 def refund_ticket():
     ticket_id = request.json["ticket_id"]
     conn, cur = get_db_conn()
     try:
-        # 先查订单信息
-        cur.execute("SELECT * FROM ticket_record WHERE ticket_id=%s", (ticket_id,))
+        # 用 FOR UPDATE 锁住订单行，防止并发重复退票
+        cur.execute(
+            "SELECT * FROM ticket_record WHERE ticket_id=%s FOR UPDATE",
+            (ticket_id,)
+        )
         ticket = cur.fetchone()
         if not ticket or ticket["ticket_status"] in ["已退票", "已完成"]:
-            return jsonify({"code":400,"msg":"无法退票"})
-        
-        # 修改订单状态
-        cur.execute("UPDATE ticket_record SET ticket_status='已退票' WHERE ticket_id=%s", (ticket_id,))
-        # 归还座位
+            conn.rollback()
+            return jsonify({"code": 400, "msg": "无法退票（订单不存在或已处理）"})
+
         flight_no = ticket["flight_no"]
         fly_date = ticket["fly_date"]
         cabin = ticket["cabin_level"]
+
+        # 原子修改订单状态（WHERE 加状态条件防并发二次退票）
+        cur.execute(
+            "UPDATE ticket_record SET ticket_status='已退票' "
+            "WHERE ticket_id=%s AND ticket_status NOT IN ('已退票', '已完成')",
+            (ticket_id,)
+        )
+        if cur.rowcount == 0:
+            conn.rollback()
+            return jsonify({"code": 400, "msg": "退票失败，订单状态已变更，请刷新后重试"})
+
+        # 归还座位
         if cabin == "头等舱":
-            cur.execute("UPDATE flight_instance SET first_remain=first_remain+1 WHERE flight_no=%s AND fly_date=%s", (flight_no, fly_date))
+            cur.execute(
+                "UPDATE flight_instance SET first_remain=first_remain+1 "
+                "WHERE flight_no=%s AND fly_date=%s",
+                (flight_no, fly_date)
+            )
         else:
-            cur.execute("UPDATE flight_instance SET economy_remain=economy_remain+1 WHERE flight_no=%s AND fly_date=%s", (flight_no, fly_date))
+            cur.execute(
+                "UPDATE flight_instance SET economy_remain=economy_remain+1 "
+                "WHERE flight_no=%s AND fly_date=%s",
+                (flight_no, fly_date)
+            )
         conn.commit()
-        return jsonify({"code":200,"msg":"退票成功"})
+        return jsonify({"code": 200, "msg": "退票成功"})
     except Exception as e:
         conn.rollback()
-        return jsonify({"code":500,"msg":str(e)})
+        return jsonify({"code": 500, "msg": str(e)})
     finally:
         conn.close()
 
-# 7. 改签接口（起落城市不变，更换航班日期）
+# 7. 改签接口（起落城市不变，更换航班日期）—— 并发安全版本
+# 并发控制：
+#   - FOR UPDATE 锁住原订单行，防止同一张票被并发改签两次
+#   - FOR UPDATE 锁住目标航班实例行，防止新航班被并发超卖
+#   - 原子扣减 + rowcount 兜底防止目标舱位在锁内被抢光
 @app.route("/api/change_ticket", methods=["POST"])
 def change_ticket():
     data = request.json
@@ -442,53 +490,91 @@ def change_ticket():
     new_fly_date = data["new_fly_date"]
     conn, cur = get_db_conn()
     try:
-        # 1. 获取原订单
-        cur.execute("SELECT * FROM ticket_record WHERE ticket_id=%s", (ticket_id,))
+        # 1. FOR UPDATE 锁住原订单行，防止并发重复改签
+        cur.execute(
+            "SELECT * FROM ticket_record WHERE ticket_id=%s FOR UPDATE",
+            (ticket_id,)
+        )
         old = cur.fetchone()
-        if old["ticket_status"] == "已退票":
-            return jsonify({"code":400,"msg":"已退票订单不可改签"})
+        if not old:
+            conn.rollback()
+            return jsonify({"code": 400, "msg": "订单不存在"})
+        if old["ticket_status"] in ("已退票", "已改签"):
+            conn.rollback()
+            return jsonify({"code": 400, "msg": f"订单状态为「{old['ticket_status']}」，不可改签"})
+
         old_flight = old["flight_no"]
         old_date = old["fly_date"]
         cabin = old["cabin_level"]
 
-        # 2. 原航班归还座位
-        if cabin == "头等舱":
-            cur.execute("UPDATE flight_instance SET first_remain=first_remain+1 WHERE flight_no=%s AND fly_date=%s", (old_flight, old_date))
-        else:
-            cur.execute("UPDATE flight_instance SET economy_remain=economy_remain+1 WHERE flight_no=%s AND fly_date=%s", (old_flight, old_date))
-        
-        # 3. 校验新航班实例存在且有余票
+        # 2. FOR UPDATE 锁住目标航班实例行，防止并发超卖
         cur.execute(
-            "SELECT first_remain, economy_remain FROM flight_instance WHERE flight_no=%s AND fly_date=%s",
+            "SELECT first_remain, economy_remain FROM flight_instance "
+            "WHERE flight_no=%s AND fly_date=%s FOR UPDATE",
             (new_flight_no, new_fly_date)
         )
         new_inst = cur.fetchone()
         if not new_inst:
+            conn.rollback()
             return jsonify({"code": 400, "msg": "目标航班实例不存在"})
         new_remain = new_inst["first_remain"] if cabin == "头等舱" else new_inst["economy_remain"]
         if new_remain <= 0:
+            conn.rollback()
             return jsonify({"code": 400, "msg": f"目标航班{cabin}已售罄"})
 
-        # 4. 新航班扣减座位
+        # 3. 原航班归还座位
         if cabin == "头等舱":
-            cur.execute("UPDATE flight_instance SET first_remain=first_remain-1 WHERE flight_no=%s AND fly_date=%s", (new_flight_no, new_fly_date))
+            cur.execute(
+                "UPDATE flight_instance SET first_remain=first_remain+1 "
+                "WHERE flight_no=%s AND fly_date=%s",
+                (old_flight, old_date)
+            )
         else:
-            cur.execute("UPDATE flight_instance SET economy_remain=economy_remain-1 WHERE flight_no=%s AND fly_date=%s", (new_flight_no, new_fly_date))
-        
-        # 5. 保留旧订单记录并标记"已改签"（不修改航班号与日期，保留原行程历史）
-        cur.execute("UPDATE ticket_record SET ticket_status='已改签' WHERE ticket_id=%s", (ticket_id,))
-        
+            cur.execute(
+                "UPDATE flight_instance SET economy_remain=economy_remain+1 "
+                "WHERE flight_no=%s AND fly_date=%s",
+                (old_flight, old_date)
+            )
+
+        # 4. 原子扣减新航班座位（WHERE remain > 0 兜底防负数）
+        if cabin == "头等舱":
+            cur.execute(
+                "UPDATE flight_instance SET first_remain=first_remain-1 "
+                "WHERE flight_no=%s AND fly_date=%s AND first_remain > 0",
+                (new_flight_no, new_fly_date)
+            )
+        else:
+            cur.execute(
+                "UPDATE flight_instance SET economy_remain=economy_remain-1 "
+                "WHERE flight_no=%s AND fly_date=%s AND economy_remain > 0",
+                (new_flight_no, new_fly_date)
+            )
+        if cur.rowcount == 0:
+            conn.rollback()
+            return jsonify({"code": 400, "msg": f"目标航班{cabin}已售罄，请重新选择"})
+
+        # 5. 原子标记旧订单为已改签（WHERE 加状态条件防并发二次改签）
+        cur.execute(
+            "UPDATE ticket_record SET ticket_status='已改签' "
+            "WHERE ticket_id=%s AND ticket_status NOT IN ('已退票', '已改签')",
+            (ticket_id,)
+        )
+        if cur.rowcount == 0:
+            conn.rollback()
+            return jsonify({"code": 400, "msg": "改签失败，订单状态已变更，请刷新后重试"})
+
         # 6. 为新航班创建新订单（状态=已支付）
         cur.execute(
-            "INSERT INTO ticket_record(id_card, flight_no, fly_date, cabin_level, real_price, ticket_status) VALUES (%s, %s, %s, %s, %s, '已支付')",
+            "INSERT INTO ticket_record(id_card, flight_no, fly_date, cabin_level, real_price, ticket_status) "
+            "VALUES (%s, %s, %s, %s, %s, '已支付')",
             (old["id_card"], new_flight_no, new_fly_date, old["cabin_level"], old["real_price"])
         )
-        
+
         conn.commit()
-        return jsonify({"code":200,"msg":"改签成功，新订单已生成"})
+        return jsonify({"code": 200, "msg": "改签成功，新订单已生成"})
     except Exception as e:
         conn.rollback()
-        return jsonify({"code":500,"msg":str(e)})
+        return jsonify({"code": 500, "msg": str(e)})
     finally:
         conn.close()
 

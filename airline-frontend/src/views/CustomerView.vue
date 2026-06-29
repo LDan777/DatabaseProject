@@ -168,7 +168,7 @@ const handleLogin = async () => {
         password: password.value
       })
 
-      if (response.data.code === 200) {
+        if (response.data.code === 200) {
         isLoggedIn.value = true
         showLoginModal.value = false
         const uData = response.data.data
@@ -181,6 +181,7 @@ const handleLogin = async () => {
           currentUser.value.name = '新乘客'
         }
         currentUser.value.level = uData.vip_level + '会员'
+        phoneNumber.value = uData.phone || ''
         showToast(`欢迎回来，${currentUser.value.name}`)
         loadMyTickets()
         handleSearchFlights()
