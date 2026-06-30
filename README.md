@@ -63,9 +63,9 @@ pip install -r requirements.txt
 ```
 
 2. **初始化数据库**
-请先登录 MySQL 执行 CREATE DATABASE airline_ticket;
+请先登录 MySQL 执行 CREATE DATABASE airline_ticket CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 ```bash
-mysql -u root -p < ../airline_ticket.sql
+mysql -u root -p airline_ticket < ../airline_ticket.sql
 ```
 
 3. **启动服务**
