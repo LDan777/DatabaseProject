@@ -59,11 +59,11 @@ DatabaseProject/
 
 1. **安装依赖**
 ```bash
-cd ds-aviation-backend
 pip install -r requirements.txt
 ```
 
 2. **初始化数据库**
+请先登录 MySQL 执行 CREATE DATABASE airline_ticket;
 ```bash
 mysql -u root -p < ../airline_ticket.sql
 ```
