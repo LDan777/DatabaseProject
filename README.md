@@ -29,7 +29,7 @@ DatabaseProject/
 ├── docs/                      # 项目文档
 │   ├── API_AND_CODE_DOC.md
 │   └── USER_OPERATION_DOC.md
-└── airline_ticket.sql         # 数据库初始化脚本，需要导入用户本地数据库使用
+└── airline_ticket.sql         # 数据库初始化脚本，需要导入本地数据库使用
 ```
 
 ## 🛠️ 技术栈
