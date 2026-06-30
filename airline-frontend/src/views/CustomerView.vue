@@ -30,8 +30,8 @@ const tempNameInput = ref('') // 实名认证姓名
 const currentUser = ref({ name: '乘客', level: '普通乘客', location: '中国·上海' })
 
 // --- 搜索状态 ---
-const departure = ref('上海')     // 后端要求传入城市/机场区域代码，如 SHA, PEK
-const destination = ref('北京')   // 后端要求传入城市/机场区域代码
+const departure = ref('')     // 后端要求传入城市/机场区域代码，如 SHA, PEK
+const destination = ref('')   // 后端要求传入城市/机场区域代码
 const travelDate = ref('2026-07-01')
 
 // --- 页面切换逻辑 ---
@@ -40,7 +40,6 @@ const activeTab = ref('home')
 // --- 行程与航班实时数据 ---
 const nextTrip = ref(null)
 const historyFlights = ref([])
-const historySearchKeyword = ref('')
 const flights = ref([])
 const seasonInfo = ref({})
 const loadingFlights = ref(false)
@@ -113,20 +112,6 @@ const filteredFlights = computed(() => {
   return flights.value
 })
 
-// 过滤行程记录（支持航班号、城市、日期搜索）
-const filteredHistoryFlights = computed(() => {
-  if (!historySearchKeyword.value.trim()) return historyFlights.value
-  const keyword = historySearchKeyword.value.trim().toLowerCase()
-  return historyFlights.value.filter(h => 
-    (h.flight || '').toLowerCase().includes(keyword) ||
-    (h.dep_city || '').toLowerCase().includes(keyword) ||
-    (h.arr_city || '').toLowerCase().includes(keyword) ||
-    (h.dep_airport || '').toLowerCase().includes(keyword) ||
-    (h.arr_airport || '').toLowerCase().includes(keyword) ||
-    (h.date || '').includes(keyword)
-  )
-})
-
 // --- 1. 联合查询航班数据 (精密对齐后端 GET /api/search_flight) ---
 const handleSearchFlights = async () => {
   try {
@@ -144,7 +129,8 @@ const handleSearchFlights = async () => {
     if (response.data.code === 200) {
       flights.value = response.data.data || []
       seasonInfo.value = response.data.extra || {}
-      activeTab.value = 'flights'
+      if (!isAutoLoad) {
+        activeTab.value = 'flights'}
     } else {
       errorMsg.value = response.data.msg || '加载航班失败'
     }
@@ -158,7 +144,7 @@ const handleSearchFlights = async () => {
 
 // 页面初始化时自动查一次
 onMounted(() => {
-  handleSearchFlights()
+  handleSearchFlights(true)
 })
 
 // --- 2. 注册与登录功能 (身份证登录+手机号注册) ---
@@ -414,7 +400,7 @@ const handleRefund = async (ticketId) => {
   try {
     const response = await axios.post(`${API_BASE}/refund_ticket`, { ticket_id: ticketId })
     if (response.data.code === 200) {
-      showToast('退票成功！座位已实时释放。')
+      showToast('退票成功！')
       loadMyTickets()
       handleSearchFlights()
     } else {
@@ -652,13 +638,10 @@ const handleServiceClick = () => {
 
         <div v-if="activeTab === 'orders'" class="view-profile">
           <h4 class="section-label">我的行程记录</h4>
+
           <div v-if="isLoggedIn" class="history-list">
-            <div class="search-bar-mini" style="margin-bottom: 20px; width: 300px;">
-              <i class="fas fa-search"></i>
-              <input v-model="historySearchKeyword" type="text" placeholder="搜索航班号、城市或日期...">
-            </div>
-            <div v-if="filteredHistoryFlights.length === 0" class="no-flights-msg card-shadow">暂无行程订单</div>
-            <div v-for="h in filteredHistoryFlights" :key="h.id" class="history-card card-shadow">
+            <div v-if="historyFlights.length === 0" class="no-flights-msg card-shadow">暂无行程订单</div>
+            <div v-for="h in historyFlights" :key="h.id" class="history-card card-shadow">
               <div class="h-date">
                 <div style="font-size:14px;font-weight:700;color:#1e293b;">{{ h.date }}</div>
                 <div style="font-size:12px;color:#38bdf8;">{{ h.depart_time }}</div>
@@ -668,13 +651,16 @@ const handleServiceClick = () => {
                 <span style="font-size:12px;color:#64748b;">{{ h.dep_airport }} → {{ h.arr_airport }}</span>
                 <span style="font-size:12px;color:#64748b;">{{ h.cabin || '' }} · ¥{{ h.price || '-' }}</span>
               </div>
-              <div class="h-status" :class="{ 'status-green': h.status === '已完成', 'status-blue': h.status === '已支付', 'status-red': h.status === '已退票', 'status-orange': h.status === '已改签' }">
+              
+              <div class="h-status" :class="{ 'status-green': h.status === '已完成', 'status-blue': h.status === '已支付', 'status-red': h.status === '已退票'|| h.status === '航班取消', 'status-orange': h.status === '已改签' }">
                 {{ h.status }}
+                
                 <button v-if="h.status === '已支付'" class="btn-refund" @click.stop="handleRefund(h.id)">退票</button>
                 <button v-if="h.status === '已支付'" class="btn-refund" style="border-color:#38bdf8;color:#38bdf8;" @click.stop="openChangeMode(h)">改签</button>
               </div>
             </div>
           </div>
+
           <div v-else class="settings-card card-shadow text-center">
              <div class="unauth-icon"><i class="fas fa-file-invoice"></i></div>
              <p class="unauth-text">请登录后查看行程记录</p>

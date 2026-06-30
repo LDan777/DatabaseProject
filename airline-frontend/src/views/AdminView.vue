@@ -28,7 +28,6 @@ const ORDER_STATUS = {
 // --- 1. 登录逻辑与权限 ---
 const isLoggedIn = ref(false)
 const adminUser = ref({ username: '', password: '' })
-const adminName = ref('Admin')
 const loginError = ref('')
 
 // --- 2. 核心导航与状态（必须优先声明，供 watch / computed / onMounted 引用）---
@@ -68,9 +67,15 @@ function goToUserHome() {
 }
 
 onMounted(async () => {
-  const loggedInFlag = localStorage.getItem('adminIsLoggedIn')
-  if (loggedInFlag === 'true') {
-    isLoggedIn.value = true
+  // 每次进入管理界面都需要重新登录
+  isLoggedIn.value = false
+  localStorage.removeItem('adminIsLoggedIn')
+  localStorage.removeItem('adminAccessGranted')
+})
+
+// 监听登录状态，登录成功后自动加载数据
+watch(isLoggedIn, async (newVal) => {
+  if (newVal === true) {
     await loadCities()
     await loadAirports()
     await loadFlights()
@@ -79,9 +84,7 @@ onMounted(async () => {
     await loadOrders()
     startAutoRefresh()
   } else {
-    isLoggedIn.value = false
-    localStorage.removeItem('adminIsLoggedIn')
-    localStorage.removeItem('adminAccessGranted')
+    stopAutoRefresh()
   }
 })
 
@@ -100,9 +103,7 @@ const handleAdminLogin = () => {
   loginError.value = ''
   if (adminUser.value.username.trim() === 'admin' && adminUser.value.password === '123456') { 
     isLoggedIn.value = true
-    adminName.value = adminUser.value.username
     localStorage.setItem('adminIsLoggedIn', 'true')
-    localStorage.setItem('adminName', adminUser.value.username)
     triggerToast('登录成功，欢迎进入管理系统')
   } else {
     loginError.value = '授权失败：口令或账号不匹配 '
@@ -1205,7 +1206,7 @@ const breadcrumb = computed(() => {
         <div class="nav-right">
           <button class="back-to-user-btn" @click="goToUserHome" style="margin-right: 16px; background: none; border: 1px solid #d8e4f7; color: #1e3a8a; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s;">返回用户界面</button>
           <div class="user-dropdown">
-            <span class="name">{{ adminName }}</span>
+            <span class="name">Admin</span>
             <div class="dropdown-menu">
               <div class="dp-item text-danger" @click="handleLogout"><i class="fas fa-power-off"></i> 退出登录</div>
             </div>
@@ -1574,7 +1575,7 @@ const breadcrumb = computed(() => {
                   <td>{{ o.ticket_id }}</td>
                   <td><b>{{ o.name }}</b><br><span class="text-secondary">身份证: {{ maskIdCard(o.id_card) }}</span></td>
                   <td>{{ o.flightNo }}</td>
-                  <td>{{ o.date }}<br><span class="text-secondary">{{ o.cabin }}舱</span></td>
+                  <td>{{ o.date }}<br><span class="text-secondary">{{ o.cabin }}</span></td>
                   <td class="text-danger font-weight-bold">¥{{ o.price }}</td>
                   <td>
                     <span v-if="o.status==='已支付'" class="el-tag info">已支付</span>
@@ -1657,7 +1658,7 @@ const breadcrumb = computed(() => {
               </div>
             </div>
             <table class="el-table">
-              <thead><tr><th>机场代码</th><th>机场名称</th><th>所属城市</th><th class="text-center">操作</th></tr></thead>
+              <thead><tr><th>机场代码</th><th>机场名称</th><th>所属城市代码</th><th class="text-center">操作</th></tr></thead>
               <tbody>
                 <tr v-if="filteredAirports.length === 0"><td colspan="4" class="text-center py-3 text-secondary">暂无数据</td></tr>
                 <tr v-for="ap in filteredAirports" :key="ap.airport_code">
@@ -1772,7 +1773,7 @@ const breadcrumb = computed(() => {
         </div>
         <div class="el-dialog__body">
           <form class="el-form">
-            <div class="el-form-item"><label>城市代码</label><input v-model="cityForm.area_code" class="el-input__inner" placeholder="如: SHA, PEK" :disabled="cityEditMode"></div>
+            <div class="el-form-item"><label>城市代码</label><input v-model="cityForm.area_code" class="el-input__inner" placeholder="如: 310000" :disabled="cityEditMode"></div>
             <div class="el-form-item"><label>城市名称</label><input v-model="cityForm.city_name" class="el-input__inner" placeholder="如: 上海"></div>
             <div class="el-form-item"><label>所属省份</label><input v-model="cityForm.province" class="el-input__inner" placeholder="如: 上海市"></div>
           </form>

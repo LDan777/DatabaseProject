@@ -168,7 +168,7 @@ def register():
         except: pass
         return jsonify({"code": 500, "msg": f"注册失败: {str(e)}"})
 
-# 2. 用户登录（身份证+密码）——分步校验
+# 2. 用户登录（身份证+密码）——已更新：分步校验
 @app.route("/api/login", methods=["POST"])
 def login():
     data = request.json
@@ -1037,6 +1037,16 @@ def flight_instance_del():
         return jsonify({"code":400,"msg":"航班号和飞行日期不能为空"})
     conn, cur = get_db_conn()
     try:
+        # 删除前，将该航班实例的所有已支付订单改为"航班取消"
+        cur.execute(
+            """UPDATE ticket_record 
+               SET ticket_status='航班取消'
+               WHERE flight_no=%s AND fly_date=%s AND ticket_status='已支付'
+            """,
+            (flight_no, fly_date)
+        )
+        
+        # 删除航班实例
         cur.execute(
             "DELETE FROM flight_instance WHERE flight_no=%s AND fly_date=%s",
             (flight_no, fly_date)
@@ -1044,9 +1054,10 @@ def flight_instance_del():
         if cur.rowcount == 0:
             conn.close()
             return jsonify({"code":404,"msg":f"未找到航班实例 {flight_no} / {fly_date}"})
+        
         conn.commit()
         conn.close()
-        return jsonify({"code":200,"msg":f"航班实例 {flight_no} / {fly_date} 已删除"})
+        return jsonify({"code":200,"msg":f"航班实例 {flight_no} / {fly_date} 已删除，相关订单标记为航班取消"})
     except Exception as e:
         conn.rollback()
         conn.close()
@@ -1056,19 +1067,40 @@ def flight_instance_del():
 @app.route("/api/admin/flight_instance/update", methods=["POST"])
 def flight_instance_update():
     d = request.json
+    flight_no = d.get("flight_no", "").strip()
+    fly_date = d.get("fly_date", "").strip()
+    new_status = d.get("flight_status", "").strip()
+    
     conn, cur = get_db_conn()
-    sql = """
-    UPDATE flight_instance 
-    SET flight_status=%s, first_remain=%s, economy_remain=%s,
-        depart_time_actual=%s, arrive_time_actual=%s
-    WHERE flight_no=%s AND fly_date=%s
-    """
-    cur.execute(sql, (d["flight_status"],d["first_remain"],d["economy_remain"],
-                       d.get("depart_time_actual","00:00:00"), d.get("arrive_time_actual","00:00:00"),
-                       d["flight_no"],d["fly_date"]))
-    conn.commit()
-    conn.close()
-    return jsonify({"code":200,"msg":"航班实例设置完成"})
+    try:
+        # 如果状态改为"取消"，同步更新该航班的所有已支付订单为"航班取消"
+        if new_status == "取消":
+            cur.execute("""
+                UPDATE ticket_record 
+                SET ticket_status='航班取消'
+                WHERE flight_no=%s AND fly_date=%s AND ticket_status='已支付'
+            """, (flight_no, fly_date))
+        
+        # 执行航班实例更新
+        sql = """
+        UPDATE flight_instance 
+        SET flight_status=%s, first_remain=%s, economy_remain=%s,
+            depart_time_actual=%s, arrive_time_actual=%s
+        WHERE flight_no=%s AND fly_date=%s
+        """
+        cur.execute(sql, (d["flight_status"],d["first_remain"],d["economy_remain"],
+                           d.get("depart_time_actual","00:00:00"), d.get("arrive_time_actual","00:00:00"),
+                           flight_no, fly_date))
+        conn.commit()
+        conn.close()
+        msg = "航班实例设置完成"
+        if new_status == "取消":
+            msg += "，相关订单已同步为航班取消"
+        return jsonify({"code":200,"msg":msg})
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({"code":500,"msg":f"数据库错误: {str(e)}"})
 
 if __name__ == "__main__":
     # 启动后台定时任务线程
